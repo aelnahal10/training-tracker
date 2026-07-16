@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type {
@@ -16,14 +17,21 @@ import type {
   Session,
   WeeklyCheckIn,
 } from "@/lib/types";
-import { loadData, saveData, clearData } from "@/lib/storage";
+import * as db from "@/lib/db";
 import { buildSeedData } from "@/lib/seed";
 import { getExerciseOrDefault } from "@/lib/exercises";
+import { readRawLocalData } from "@/lib/storage";
+import { useAuth } from "@/components/AuthProvider";
 
 export interface ExerciseDefaultPatch {
   name: string;
   defaultWeight?: number | null;
   defaultDurationSeconds?: number | null;
+}
+
+export interface ImportResult {
+  imported: boolean;
+  counts?: { sessions: number; metrics: number; checkins: number; phases: number };
 }
 
 interface StoreValue extends AppData {
@@ -37,6 +45,9 @@ interface StoreValue extends AppData {
   upsertPhase: (p: Phase) => void;
   deletePhase: (id: string) => void;
   reseed: () => void;
+  // True when this browser still has old localStorage data available to import.
+  hasLocalData: boolean;
+  importLocal: () => Promise<ImportResult>;
   // Effective exercise metadata incl. any user-edited defaults.
   getEx: (name: string) => PresetExercise;
   // Remember edited defaults so they pre-fill next time.
@@ -64,79 +75,136 @@ function upsertById<T extends { id: string }>(list: T[], item: T): T[] {
   return next;
 }
 
+const logFail = (e: unknown) => console.error("Supabase sync failed:", e);
+
 export function StoreProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const userId = user.id;
+
   const [data, setData] = useState<AppData>(EMPTY);
   const [ready, setReady] = useState(false);
+  const [hasLocalData, setHasLocalData] = useState(false);
 
-  // Hydrate (and seed on first launch) once, on the client.
-  useEffect(() => {
-    setData(loadData());
-    setReady(true);
+  // Latest data, readable synchronously inside mutations (which then persist).
+  const dataRef = useRef(data);
+  const apply = useCallback((next: AppData) => {
+    dataRef.current = next;
+    setData(next);
   }, []);
 
-  // Apply a mutation, persist, and re-render.
-  const mutate = useCallback((fn: (d: AppData) => AppData) => {
-    setData((prev) => {
-      const next = fn(prev);
-      saveData(next);
-      return next;
-    });
+  // Load everything for the signed-in user (seeds the catalogue on first login).
+  useEffect(() => {
+    let cancelled = false;
+    setReady(false);
+    db.fetchAllData(userId)
+      .then((d) => {
+        if (!cancelled) {
+          dataRef.current = d;
+          setData(d);
+          setReady(true);
+        }
+      })
+      .catch((e) => {
+        logFail(e);
+        if (!cancelled) setReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  useEffect(() => {
+    setHasLocalData(readRawLocalData() != null);
   }, []);
 
   const value = useMemo<StoreValue>(
     () => ({
       ...data,
       ready,
-      upsertSession: (s) =>
-        mutate((d) => ({ ...d, sessions: upsertById(d.sessions, s) })),
-      deleteSession: (id) =>
-        mutate((d) => ({ ...d, sessions: d.sessions.filter((x) => x.id !== id) })),
-      upsertMetric: (m) =>
-        mutate((d) => ({ ...d, metrics: upsertById(d.metrics, m) })),
-      deleteMetric: (id) =>
-        mutate((d) => ({ ...d, metrics: d.metrics.filter((x) => x.id !== id) })),
-      upsertCheckin: (c) =>
-        mutate((d) => ({ ...d, checkins: upsertById(d.checkins, c) })),
-      deleteCheckin: (id) =>
-        mutate((d) => ({ ...d, checkins: d.checkins.filter((x) => x.id !== id) })),
-      upsertPhase: (p) =>
-        mutate((d) => ({ ...d, phases: upsertById(d.phases, p) })),
-      deletePhase: (id) =>
-        mutate((d) => ({ ...d, phases: d.phases.filter((x) => x.id !== id) })),
+      hasLocalData,
+      upsertSession: (s) => {
+        apply({ ...dataRef.current, sessions: upsertById(dataRef.current.sessions, s) });
+        db.upsertSession(userId, s).catch(logFail);
+      },
+      deleteSession: (id) => {
+        apply({ ...dataRef.current, sessions: dataRef.current.sessions.filter((x) => x.id !== id) });
+        db.deleteSession(id).catch(logFail);
+      },
+      upsertMetric: (m) => {
+        apply({ ...dataRef.current, metrics: upsertById(dataRef.current.metrics, m) });
+        db.upsertMetric(userId, m).catch(logFail);
+      },
+      deleteMetric: (id) => {
+        apply({ ...dataRef.current, metrics: dataRef.current.metrics.filter((x) => x.id !== id) });
+        db.deleteMetric(id).catch(logFail);
+      },
+      upsertCheckin: (c) => {
+        apply({ ...dataRef.current, checkins: upsertById(dataRef.current.checkins, c) });
+        db.upsertCheckin(userId, c).catch(logFail);
+      },
+      deleteCheckin: (id) => {
+        apply({ ...dataRef.current, checkins: dataRef.current.checkins.filter((x) => x.id !== id) });
+        db.deleteCheckin(id).catch(logFail);
+      },
+      upsertPhase: (p) => {
+        apply({ ...dataRef.current, phases: upsertById(dataRef.current.phases, p) });
+        db.upsertPhase(userId, p).catch(logFail);
+      },
+      deletePhase: (id) => {
+        apply({ ...dataRef.current, phases: dataRef.current.phases.filter((x) => x.id !== id) });
+        db.deletePhase(id).catch(logFail);
+      },
       getEx: (name) => {
         const stored = data.exercises.find((e) => e.name === name);
         return stored ?? getExerciseOrDefault(name);
       },
-      rememberDefaults: (patches) =>
-        mutate((d) => {
-          if (patches.length === 0) return d;
-          const byName = new Map(patches.map((p) => [p.name, p]));
-          const exercises = d.exercises.map((e) => {
-            const patch = byName.get(e.name);
-            if (!patch) return e;
-            return {
-              ...e,
-              defaultWeight:
-                patch.defaultWeight !== undefined ? patch.defaultWeight : e.defaultWeight,
-              defaultDurationSeconds:
-                patch.defaultDurationSeconds !== undefined
-                  ? patch.defaultDurationSeconds
-                  : e.defaultDurationSeconds,
-            };
-          });
-          return { ...d, exercises };
-        }),
-      setHeight: (heightCm) =>
-        mutate((d) => ({ ...d, profile: { ...d.profile, heightCm } })),
+      rememberDefaults: (patches) => {
+        if (patches.length === 0) return;
+        const byName = new Map(patches.map((p) => [p.name, p]));
+        const exercises = dataRef.current.exercises.map((e) => {
+          const patch = byName.get(e.name);
+          if (!patch) return e;
+          return {
+            ...e,
+            defaultWeight:
+              patch.defaultWeight !== undefined ? patch.defaultWeight : e.defaultWeight,
+            defaultDurationSeconds:
+              patch.defaultDurationSeconds !== undefined
+                ? patch.defaultDurationSeconds
+                : e.defaultDurationSeconds,
+          };
+        });
+        apply({ ...dataRef.current, exercises });
+        db.saveProfile(userId, dataRef.current.profile.heightCm, exercises).catch(logFail);
+      },
+      setHeight: (heightCm) => {
+        const next = { ...dataRef.current, profile: { ...dataRef.current.profile, heightCm } };
+        apply(next);
+        db.saveProfile(userId, heightCm, next.exercises).catch(logFail);
+      },
       reseed: () => {
-        clearData();
-        const seeded = buildSeedData();
-        saveData(seeded);
-        setData(seeded);
-        console.log("Seeded phases and exercises");
+        const seed = buildSeedData();
+        apply(seed);
+        db.resetData(userId, seed).catch(logFail);
+      },
+      importLocal: async () => {
+        const local = readRawLocalData();
+        if (!local) return { imported: false };
+        await db.importData(userId, local);
+        const fresh = await db.fetchAllData(userId);
+        apply(fresh);
+        return {
+          imported: true,
+          counts: {
+            sessions: local.sessions.length,
+            metrics: local.metrics.length,
+            checkins: local.checkins.length,
+            phases: local.phases.length,
+          },
+        };
       },
     }),
-    [data, ready, mutate]
+    [data, ready, hasLocalData, userId, apply]
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

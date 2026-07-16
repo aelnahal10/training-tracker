@@ -3,10 +3,14 @@ import { addDays, todayISO } from "./date";
 import { uid } from "./id";
 import { seedExercises } from "./exercises";
 
-// Build the initial phases relative to today.
+// The program start date (Phase 1, week 1). Change this one line to shift the
+// whole plan; Phase 2 is derived from it.
+export const PROGRAM_START_DATE = "2026-07-18"; // Saturday
+
+// Build the initial phases from the program start date.
 // Phase 1 = Weeks 1-6, Phase 2 = Weeks 7-12.
 export function buildSeedPhases(): Phase[] {
-  const start = todayISO();
+  const start = PROGRAM_START_DATE;
   const phase1: Phase = {
     id: uid("phase"),
     name: "Tendon Foundation",

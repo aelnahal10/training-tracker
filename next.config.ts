@@ -8,7 +8,7 @@ import type { NextConfig } from "next";
 //
 // `repoName` below is only a fallback for the manual `npm run deploy` script.
 // If you deploy that way, set it to your repo name (or "" for a user/org page).
-const repoName = "repo-name";
+const repoName = "training-tracker";
 
 const isProd = process.env.NODE_ENV === "production";
 const ciBasePath = process.env.PAGES_BASE_PATH; // injected by CI ("" is valid)

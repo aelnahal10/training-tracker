@@ -40,7 +40,10 @@ export default function HistoryPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="History" subtitle={`${store.sessions.length} sessions`} />
+      <PageHeader
+        title="History"
+        subtitle={`${store.sessions.length} ${store.sessions.length === 1 ? "session" : "sessions"}`}
+      />
 
       <div className="flex overflow-hidden rounded-xl border border-border">
         {(["all", "training", "iso_only", "rest"] as Filter[]).map((f) => (

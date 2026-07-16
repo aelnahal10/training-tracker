@@ -290,7 +290,7 @@ function ScheduleView({
         </>
       )}
 
-      <Link href={`/log?prefill=1&date=${today}`} className="block">
+      <Link href={`/log?date=${today}`} className="block">
         <Button className="w-full">Log today&apos;s session</Button>
       </Link>
     </>

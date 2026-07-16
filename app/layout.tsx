@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { StoreProvider } from "@/components/StoreProvider";
 import { BottomNav } from "@/components/BottomNav";
-import { AuthGate } from "@/components/AuthGate";
+import { AuthProvider } from "@/components/AuthProvider";
 
 export const metadata: Metadata = {
   title: "Training Tracker",
@@ -24,8 +24,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-bg text-white antialiased">
-        <StoreProvider>
-          <AuthGate>
+        <AuthProvider>
+          <StoreProvider>
             {/* Mobile: single phone-width column with a bottom tab bar.
                 Desktop (>=768px): sidebar + content, capped at 1400px, centred. */}
             <div className="md:flex md:justify-center">
@@ -34,8 +34,8 @@ export default function RootLayout({
                 {children}
               </main>
             </div>
-          </AuthGate>
-        </StoreProvider>
+          </StoreProvider>
+        </AuthProvider>
       </body>
     </html>
   );

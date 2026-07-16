@@ -31,19 +31,10 @@ export function loadData(): AppData {
           ? parsed.exercises
           : seedExercises();
 
-      // One-time back-fill: if muscle mass has never been recorded, set the most
-      // recent entry to the opening value (66.5 kg). Non-destructive to sessions.
-      const metrics = (parsed.metrics ?? []).map((m) => ({ ...m }));
-      const hasMuscle = metrics.some((m) => m.muscleMassKg != null);
-      if (metrics.length > 0 && !hasMuscle) {
-        const newest = metrics.reduce((a, b) => (b.date > a.date ? b : a));
-        newest.muscleMassKg = 66.5;
-      }
-
       return {
         phases: parsed.phases ?? [],
         sessions: parsed.sessions ?? [],
-        metrics,
+        metrics: parsed.metrics ?? [],
         checkins: parsed.checkins ?? [],
         exercises,
         profile: parsed.profile ?? { heightCm: null },
@@ -71,4 +62,26 @@ export function saveData(data: AppData): void {
 export function clearData(): void {
   if (!isBrowser) return;
   window.localStorage.removeItem(STORAGE_KEY);
+}
+
+// Read existing localStorage data as-is (no seeding). Used for the one-time
+// import into Supabase. Returns null if nothing is stored or it's corrupt.
+export function readRawLocalData(): AppData | null {
+  if (!isBrowser) return null;
+  const raw = window.localStorage.getItem(STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<AppData>;
+    return {
+      phases: parsed.phases ?? [],
+      sessions: parsed.sessions ?? [],
+      metrics: parsed.metrics ?? [],
+      checkins: parsed.checkins ?? [],
+      exercises:
+        parsed.exercises && parsed.exercises.length > 0 ? parsed.exercises : seedExercises(),
+      profile: parsed.profile ?? { heightCm: null },
+    };
+  } catch {
+    return null;
+  }
 }

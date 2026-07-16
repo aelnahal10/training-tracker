@@ -42,20 +42,24 @@ export default function LogPage() {
   );
 }
 
-// A fresh set pre-filled with the exercise's current default weight/duration and
-// target reps. `secondsOverride` lets the day-specific iso protocol set duration.
-function blankSet(ex: PresetExercise, secondsOverride?: number | null): SetEntry {
-  const isWeight = ex.inputType === "weight_reps";
-  const isReps = isWeight || ex.inputType === "bodyweight_reps";
-  const isDuration = ex.inputType === "duration" || ex.inputType === "duration_min";
-  return {
-    weight: isWeight ? ex.defaultWeight : null,
-    reps: isReps ? targetRepsValue(ex) : null,
-    durationSeconds: isDuration
-      ? secondsOverride ?? ex.defaultDurationSeconds ?? null
-      : null,
-    rpe: null,
-  };
+// A fresh, empty set. Targets/defaults/remembered values are shown as input
+// placeholders (grey hints) rather than pre-entered values, so an untouched set
+// reads as "not performed" and is dropped on save (see pruneExercises).
+function blankSet(): SetEntry {
+  return { weight: null, reps: null, durationSeconds: null, rpe: null };
+}
+
+// A set counts as performed once the user enters a weight, rep count or duration.
+function setHasData(s: SetEntry): boolean {
+  return s.weight != null || s.reps != null || s.durationSeconds != null;
+}
+
+// Drop untouched sets, then drop any exercise left with no performed sets, so
+// loading a day's plan and skipping exercises never records phantom work.
+function pruneExercises(list: ExerciseEntry[]): ExerciseEntry[] {
+  return list
+    .map((ex) => ({ ...ex, sets: ex.sets.filter(setHasData) }))
+    .filter((ex) => ex.sets.length > 0);
 }
 
 function LogInner() {
@@ -77,13 +81,10 @@ function LogInner() {
   // Turn a schedule plan (iso + training items) into logged exercise entries,
   // each with the right number of sets and defaults pre-filled.
   const buildExercises = (plan: { items: PrefillItem[] }): ExerciseEntry[] =>
-    plan.items.map((item) => {
-      const ex = store.getEx(item.name);
-      return {
-        name: item.name,
-        sets: Array.from({ length: item.sets }, () => blankSet(ex, item.durationSeconds)),
-      };
-    });
+    plan.items.map((item) => ({
+      name: item.name,
+      sets: Array.from({ length: item.sets }, () => blankSet()),
+    }));
 
   // New sessions auto-load the plan for that date's weekday (iso + training).
   const prefilled = useMemo(() => {
@@ -139,7 +140,7 @@ function LogInner() {
       // Each exercise can only be added once per session.
       if (prev.some((e) => e.name === name)) return prev;
       const count = defaultSetCount(ex);
-      return [...prev, { name, sets: Array.from({ length: count }, () => blankSet(ex)) }];
+      return [...prev, { name, sets: Array.from({ length: count }, () => blankSet()) }];
     });
   };
 
@@ -183,7 +184,7 @@ function LogInner() {
   const addSet = (exIdx: number) =>
     setExercises((prev) =>
       prev.map((ex, i) =>
-        i === exIdx ? { ...ex, sets: [...ex.sets, blankSet(store.getEx(ex.name))] } : ex
+        i === exIdx ? { ...ex, sets: [...ex.sets, blankSet()] } : ex
       )
     );
 
@@ -228,7 +229,7 @@ function LogInner() {
   };
 
   const save = () => {
-    const finalExercises = type === "rest" ? [] : exercises;
+    const finalExercises = type === "rest" ? [] : pruneExercises(exercises);
     store.rememberDefaults(computeDefaultPatches(finalExercises));
     store.upsertSession({
       id: editingId ?? uid("session"),
@@ -488,6 +489,14 @@ function ExerciseBlock({
   const showSeconds = meta.inputType === "duration";
   const showMinutes = meta.inputType === "duration_min";
 
+  // Targets / remembered defaults shown as grey placeholders (not pre-entered).
+  const repsTarget = targetRepsValue(meta);
+  const weightPh = meta.defaultWeight != null ? String(meta.defaultWeight) : "0";
+  const repsPh = repsTarget != null ? String(repsTarget) : "0";
+  const secPh = meta.defaultDurationSeconds != null ? String(meta.defaultDurationSeconds) : "0";
+  const minPh =
+    meta.defaultDurationSeconds != null ? String(Math.round(meta.defaultDurationSeconds / 60)) : "0";
+
   return (
     <div className="rounded-xl border border-border p-3">
       <div className="mb-2 flex items-center justify-between">
@@ -520,20 +529,30 @@ function ExerciseBlock({
               {setIdx + 1}
             </span>
             {showWeight && (
-              <NumInput value={set.weight} onChange={(v) => onUpdateSet(setIdx, "weight", v)} />
+              <NumInput
+                value={set.weight}
+                placeholder={weightPh}
+                onChange={(v) => onUpdateSet(setIdx, "weight", v)}
+              />
             )}
             {showReps && (
-              <NumInput value={set.reps} onChange={(v) => onUpdateSet(setIdx, "reps", v)} />
+              <NumInput
+                value={set.reps}
+                placeholder={repsPh}
+                onChange={(v) => onUpdateSet(setIdx, "reps", v)}
+              />
             )}
             {showSeconds && (
               <NumInput
                 value={set.durationSeconds}
+                placeholder={secPh}
                 onChange={(v) => onUpdateSet(setIdx, "durationSeconds", v)}
               />
             )}
             {showMinutes && (
               <NumInput
                 value={set.durationSeconds == null ? null : set.durationSeconds / 60}
+                placeholder={minPh}
                 onChange={(v) =>
                   onUpdateSet(setIdx, "durationSeconds", v == null ? null : Math.round(v * 60))
                 }

@@ -37,6 +37,8 @@ export function kneePainElevated(sessions: Session[]): boolean {
 // 3. ISO streak broken: neither today nor yesterday has an iso logged or a
 //    rest day logged (streak broken 2+ days).
 export function isoStreakBroken(sessions: Session[]): boolean {
+  // Nothing to break yet on a fresh install — don't nag brand-new users.
+  if (sessions.length === 0) return false;
   const today = todayISO();
   const yesterday = addDays(today, -1);
   const dayCovered = (iso: string) => {
@@ -51,8 +53,9 @@ export function isoStreakBroken(sessions: Session[]): boolean {
 //    same heaviest-set weight.
 export function plateauedExercises(sessions: Session[]): string[] {
   const flagged: string[] = [];
+  const desc = sessionsSortedDesc(sessions);
   for (const name of loggedExerciseNames(sessions)) {
-    const weights = sessionsSortedDesc(sessions)
+    const weights = desc
       .map((s) => maxWeightInSession(s, name))
       .filter((w): w is number => w != null);
     if (weights.length < 3) continue;
