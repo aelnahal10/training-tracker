@@ -142,6 +142,16 @@ function LogInner() {
   const [pendingLock, setPendingLock] = useState<string | null>(null);
 
   const phase = currentPhase(store.phases, date);
+  const isPhase0 = phase?.name === PHASE0_NAME;
+
+  // Quick "load a day" presets match the current phase's actual training days.
+  const dayPresets = isPhase0
+    ? [
+        { key: "cardio", label: "Cardio day", dow: 1 },
+        { key: "fullbody", label: "Full body day", dow: 6 },
+        { key: "iso", label: "Iso day", dow: 2 },
+      ]
+    : FOCUS_PRESETS;
 
   if (!store.ready) return <div className="text-muted">Loading…</div>;
 
@@ -175,10 +185,26 @@ function LogInner() {
   };
 
   // Load a whole day's plan (replaces the current exercise list + session type).
+  // In Phase 0 this comes from the DB schedule for that weekday + current week.
   const loadDay = (dow: number) => {
-    const plan = prefillForDow(dow);
-    setType(plan.type);
-    setExercises(buildExercises(plan));
+    if (isPhase0 && phase) {
+      const rows = scheduledForDay(
+        store.scheduledExercises.filter((s) => s.phaseId === phase.id),
+        dow,
+        phase0Week(date, phase.startDate)
+      );
+      setType(rows.some((r) => r.kind !== "iso") ? "training" : "iso_only");
+      setExercises(
+        rows.map((r) => ({
+          name: r.name,
+          sets: Array.from({ length: r.sets ?? 1 }, () => blankSet()),
+        }))
+      );
+    } else {
+      const plan = prefillForDow(dow);
+      setType(plan.type);
+      setExercises(buildExercises(plan));
+    }
     setSearch("");
   };
 
@@ -354,7 +380,7 @@ function LogInner() {
                   Load a day&apos;s plan
                 </span>
                 <div className="grid grid-cols-2 gap-2">
-                  {FOCUS_PRESETS.map((f) => (
+                  {dayPresets.map((f) => (
                     <Button key={f.key} variant="secondary" onClick={() => loadDay(f.dow)}>
                       {f.label}
                     </Button>
