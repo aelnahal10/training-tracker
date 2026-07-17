@@ -18,6 +18,7 @@ export function loadData(): AppData {
       metrics: [],
       checkins: [],
       exercises: [],
+      scheduledExercises: [],
       profile: { heightCm: null },
     };
   }
@@ -37,6 +38,7 @@ export function loadData(): AppData {
         metrics: parsed.metrics ?? [],
         checkins: parsed.checkins ?? [],
         exercises,
+        scheduledExercises: parsed.scheduledExercises ?? [],
         profile: parsed.profile ?? { heightCm: null },
       };
     }
@@ -79,6 +81,7 @@ export function readRawLocalData(): AppData | null {
       checkins: parsed.checkins ?? [],
       exercises:
         parsed.exercises && parsed.exercises.length > 0 ? parsed.exercises : seedExercises(),
+      scheduledExercises: parsed.scheduledExercises ?? [],
       profile: parsed.profile ?? { heightCm: null },
     };
   } catch {

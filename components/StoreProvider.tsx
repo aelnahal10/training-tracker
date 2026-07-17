@@ -63,6 +63,7 @@ const EMPTY: AppData = {
   metrics: [],
   checkins: [],
   exercises: [],
+  scheduledExercises: [],
   profile: { heightCm: null },
 };
 

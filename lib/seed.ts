@@ -1,38 +1,54 @@
 import type { AppData, BodyMetric, Phase } from "./types";
-import { addDays, todayISO } from "./date";
+import { todayISO } from "./date";
 import { uid } from "./id";
 import { seedExercises } from "./exercises";
+import {
+  PHASE0_NAME,
+  PHASE0_START,
+  PHASE0_END,
+  PHASE0_DESCRIPTION,
+  PHASE1_NAME,
+  PHASE1_START,
+  PHASE1_END,
+  PHASE1_DESCRIPTION,
+  PHASE2_NAME,
+  PHASE2_START,
+  PHASE2_END,
+  PHASE2_DESCRIPTION,
+  PHASE0_TEMPLATE,
+} from "./phase0";
 
-// The program start date (Phase 1, week 1). Change this one line to shift the
-// whole plan; Phase 2 is derived from it.
-export const PROGRAM_START_DATE = "2026-07-18"; // Saturday
-
-// Build the initial phases from the program start date.
-// Phase 1 = Weeks 1-6, Phase 2 = Weeks 7-12.
+// The three program phases in order (Phase 0 → 1 → 2), with fixed 2026 dates.
 export function buildSeedPhases(): Phase[] {
-  const start = PROGRAM_START_DATE;
-  const phase1: Phase = {
-    id: uid("phase"),
-    name: "Tendon Foundation",
-    startDate: start,
-    endDate: addDays(start, 6 * 7), // ~6 weeks
-    description:
-      "Isometrics daily. Pain-free training only. No lat pulldowns, no tricep extensions, no dips.",
-    unlockedExercises: [], // Lat Pulldown & Tricep Extensions stay locked in Phase 1
-  };
-  const phase2: Phase = {
-    id: uid("phase"),
-    name: "Progressive Loading",
-    startDate: addDays(start, 6 * 7 + 1),
-    endDate: addDays(start, 12 * 7),
-    description:
-      "Reintroduce restricted exercises with light load. Increase weight 5-10% per week. Plyometric prep begins.",
-    unlockedExercises: ["Lat Pulldown", "Tricep Extensions"],
-  };
-  return [phase1, phase2];
+  return [
+    {
+      id: uid("phase"),
+      name: PHASE0_NAME,
+      startDate: PHASE0_START,
+      endDate: PHASE0_END,
+      description: PHASE0_DESCRIPTION,
+      unlockedExercises: [],
+    },
+    {
+      id: uid("phase"),
+      name: PHASE1_NAME,
+      startDate: PHASE1_START,
+      endDate: PHASE1_END,
+      description: PHASE1_DESCRIPTION,
+      unlockedExercises: [], // Lat Pulldown & Tricep Extensions stay locked in Phase 1
+    },
+    {
+      id: uid("phase"),
+      name: PHASE2_NAME,
+      startDate: PHASE2_START,
+      endDate: PHASE2_END,
+      description: PHASE2_DESCRIPTION,
+      unlockedExercises: ["Lat Pulldown", "Tricep Extensions"],
+    },
+  ];
 }
 
-// Full fresh-install dataset.
+// Full fresh-install dataset, including the Phase 0 weekly schedule template.
 export function buildSeedData(): AppData {
   // Opening body-metric entry (user overwrites weight daily going forward).
   const openingMetric: BodyMetric = {
@@ -42,12 +58,20 @@ export function buildSeedData(): AppData {
     muscleMassKg: 66.5,
     bodyFatPercent: 19,
   };
+  const phases = buildSeedPhases();
+  const phase0 = phases[0];
+  const scheduledExercises = PHASE0_TEMPLATE.map((t) => ({
+    ...t,
+    id: uid("sched"),
+    phaseId: phase0.id,
+  }));
   return {
-    phases: buildSeedPhases(),
+    phases,
     sessions: [],
     metrics: [openingMetric],
     checkins: [],
     exercises: seedExercises(),
+    scheduledExercises,
     profile: { heightCm: 198 },
   };
 }

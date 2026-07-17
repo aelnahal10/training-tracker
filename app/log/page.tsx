@@ -25,7 +25,8 @@ import {
   FOCUS_PRESETS,
   type PrefillItem,
 } from "@/lib/schedule";
-import { todayISO } from "@/lib/date";
+import { PHASE0_NAME, phase0Week, scheduledForDay } from "@/lib/phase0";
+import { parseISO, todayISO } from "@/lib/date";
 import { uid } from "@/lib/id";
 import type {
   ExerciseEntry,
@@ -37,9 +38,18 @@ import type {
 export default function LogPage() {
   return (
     <Suspense fallback={<div className="text-muted">Loading…</div>}>
-      <LogInner />
+      <LogGate />
     </Suspense>
   );
+}
+
+// Only mount the form once the store has loaded, so its one-time state
+// initialization (prefill, existing session) sees the real data — not the
+// empty pre-hydration shell.
+function LogGate() {
+  const store = useStore();
+  if (!store.ready) return <div className="text-muted">Loading…</div>;
+  return <LogInner />;
 }
 
 // A fresh, empty set. Targets/defaults/remembered values are shown as input
@@ -86,11 +96,31 @@ function LogInner() {
       sets: Array.from({ length: item.sets }, () => blankSet()),
     }));
 
-  // New sessions auto-load the plan for that date's weekday (iso + training).
+  // The plan for a date: Phase 0 pulls its exercises from the Supabase schedule
+  // (day + program week); any other phase uses the hardcoded weekday plan.
+  const planForDate = (dateISO: string): { type: SessionType; exercises: ExerciseEntry[] } => {
+    const ph = currentPhase(store.phases, dateISO);
+    if (ph?.name === PHASE0_NAME) {
+      const rows = scheduledForDay(
+        store.scheduledExercises.filter((s) => s.phaseId === ph.id),
+        parseISO(dateISO).getDay(),
+        phase0Week(dateISO, ph.startDate)
+      );
+      const type: SessionType = rows.some((r) => r.kind !== "iso") ? "training" : "iso_only";
+      const exercises: ExerciseEntry[] = rows.map((r) => ({
+        name: r.name,
+        sets: Array.from({ length: r.sets ?? 1 }, () => blankSet()),
+      }));
+      return { type, exercises };
+    }
+    const plan = prefillForDate(dateISO);
+    return { type: plan.type, exercises: buildExercises(plan) };
+  };
+
+  // New sessions auto-load the plan for that date (iso + training/cardio).
   const prefilled = useMemo(() => {
     if (existing) return null;
-    const plan = prefillForDate(initialDate);
-    return { type: plan.type, exercises: buildExercises(plan) };
+    return planForDate(initialDate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.ready]);
 
@@ -167,14 +197,14 @@ function LogInner() {
       setNotes(sess.notes);
       setExercises(sess.exercises);
     } else {
-      const plan = prefillForDate(newDate);
+      const plan = planForDate(newDate);
       setEditingId(null);
       setType(plan.type);
       setIsoCompleted(false);
       setElbow(0);
       setKnee(0);
       setNotes("");
-      setExercises(buildExercises(plan));
+      setExercises(plan.exercises);
     }
   };
 

@@ -86,6 +86,34 @@ export interface Profile {
   heightCm: number | null; // used for BMI (weight-per-height) stats
 }
 
+// ---- Scheduled program template (DB-driven, e.g. Phase 0) ----
+
+export type ScheduledKind = "cardio" | "breathing" | "strength" | "iso" | "core";
+
+// A single prescribed exercise within a phase's weekly plan, stored in Supabase.
+// dayOfWeek uses 0=Sun..6=Sat, with -1 meaning "every day" (the daily iso block).
+// weekStart/weekEnd (inclusive, null = all weeks) let a day differ by week, e.g.
+// sprints only appear from week 3.
+export interface ScheduledExercise {
+  id: string;
+  phaseId: string;
+  dayOfWeek: number;
+  weekStart: number | null;
+  weekEnd: number | null;
+  position: number;
+  name: string;
+  kind: ScheduledKind;
+  sets: number | null;
+  reps: string | null;
+  weight: number | null;
+  durationSeconds: number | null;
+  workSeconds: number | null; // interval work (e.g. 30s hard)
+  recoverySeconds: number | null; // interval recovery (e.g. 90s easy)
+  restSeconds: number | null;
+  unit: string | null;
+  note: string | null;
+}
+
 export interface AppData {
   phases: Phase[];
   sessions: Session[];
@@ -94,5 +122,7 @@ export interface AppData {
   // Per-exercise remembered defaults. Editing a value while logging updates the
   // matching entry here so it pre-fills next time. Absent = use catalogue default.
   exercises: PresetExercise[];
+  // DB-driven weekly plan rows (currently Phase 0). Read-only in the UI.
+  scheduledExercises: ScheduledExercise[];
   profile: Profile;
 }

@@ -28,6 +28,8 @@ import {
   isoItemLabel,
   isoExerciseNames,
 } from "@/lib/schedule";
+import { PHASE0_NAME, phase0Week, scheduledForDay, scheduledLabel } from "@/lib/phase0";
+import type { ScheduledExercise } from "@/lib/types";
 import { getExerciseOrDefault } from "@/lib/exercises";
 import { formatLong, todayISO, dayInitial, parseISO, daysBetween, weekdayName } from "@/lib/date";
 import { uid } from "@/lib/id";
@@ -134,8 +136,22 @@ function TodayCard() {
   const session = sessionForDate(store.sessions, today);
   const phase = currentPhase(store.phases);
 
+  // During Phase 0 the plan is DB-driven; otherwise use the hardcoded schedule.
+  const isPhase0 = phase?.name === PHASE0_NAME;
+  const week = isPhase0 && phase ? phase0Week(today, phase.startDate) : 0;
+  const p0Rows =
+    isPhase0 && phase
+      ? scheduledForDay(
+          store.scheduledExercises.filter((s) => s.phaseId === phase.id),
+          parseISO(today).getDay(),
+          week
+        )
+      : [];
+
   // Iso completion reflects the full day-specific iso list, not a generic flag.
-  const isoNames = isoExerciseNames(today);
+  const isoNames = isPhase0
+    ? p0Rows.filter((r) => r.kind === "iso").map((r) => r.name)
+    : isoExerciseNames(today);
   const loggedNames = new Set((session?.exercises ?? []).map((e) => e.name));
   const isoLoggedCount = isoNames.filter((n) => loggedNames.has(n)).length;
   const isoFullyLogged = isoNames.length > 0 && isoLoggedCount === isoNames.length;
@@ -193,6 +209,8 @@ function TodayCard() {
 
       {session && (session.exercises.length > 0 || session.type === "rest") ? (
         <LoggedSummary session={session} today={today} />
+      ) : isPhase0 ? (
+        <Phase0ScheduleView rows={p0Rows} week={week} today={today} />
       ) : (
         <ScheduleView store={store} today={today} />
       )}
@@ -285,6 +303,71 @@ function ScheduleView({
                 <span className="text-muted">•</span>
                 {exerciseLine(store.getEx(name))}
               </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      <Link href={`/log?date=${today}`} className="block">
+        <Button className="w-full">Log today&apos;s session</Button>
+      </Link>
+    </>
+  );
+}
+
+// Phase 0's plan for today, rendered straight from the Supabase schedule rows.
+function Phase0ScheduleView({
+  rows,
+  week,
+  today,
+}: {
+  rows: ScheduledExercise[];
+  week: number;
+  today: string;
+}) {
+  const isoRows = rows.filter((r) => r.kind === "iso");
+  const mainRows = rows.filter((r) => r.kind !== "iso");
+  const isTraining = mainRows.length > 0;
+  const hasStrength = mainRows.some((r) => r.kind === "strength");
+  const dayTitle = !isTraining ? "ISO ONLY" : hasStrength ? "FULL BODY + ISO" : "CARDIO + ISO";
+  const mainTitle = hasStrength ? "FULL BODY" : "CARDIO";
+
+  const Item = ({ s }: { s: ScheduledExercise }) => (
+    <li className="flex flex-col gap-0.5">
+      <span className="flex gap-2">
+        <span className="text-muted">•</span>
+        <span>{scheduledLabel(s)}</span>
+      </span>
+      {s.note && <span className="ml-4 text-[11px] text-muted">{s.note}</span>}
+    </li>
+  );
+
+  if (rows.length === 0) {
+    return <p className="text-sm text-muted">No plan scheduled for today.</p>;
+  }
+
+  return (
+    <>
+      <p className="mb-2 text-xs font-bold uppercase tracking-wide text-accent">
+        Today — {dayTitle} · Week {week}
+      </p>
+
+      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-iso">Daily iso</p>
+      <ul className="mb-2 space-y-1.5 text-sm text-white">
+        {isoRows.map((s) => (
+          <Item key={s.id} s={s} />
+        ))}
+      </ul>
+
+      {isTraining && (
+        <>
+          <div className="my-2 h-px bg-border" />
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-trained">
+            {mainTitle}
+          </p>
+          <ul className="mb-3 space-y-1.5 text-sm text-white">
+            {mainRows.map((s) => (
+              <Item key={s.id} s={s} />
             ))}
           </ul>
         </>
@@ -493,6 +576,7 @@ function AlertsCard() {
         metrics: store.metrics,
         checkins: store.checkins,
         exercises: store.exercises,
+        scheduledExercises: store.scheduledExercises,
         profile: store.profile,
       }),
     [store.phases, store.sessions, store.metrics, store.checkins, store.exercises, store.profile]

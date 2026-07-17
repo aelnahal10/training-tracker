@@ -1,12 +1,27 @@
 import { supabase } from "./supabase";
 import { seedExercises } from "./exercises";
 import { buildSeedData } from "./seed";
+import { uid } from "./id";
+import {
+  PHASE0_NAME,
+  PHASE0_START,
+  PHASE0_END,
+  PHASE0_DESCRIPTION,
+  PHASE1_NAME,
+  PHASE1_START,
+  PHASE1_END,
+  PHASE2_NAME,
+  PHASE2_START,
+  PHASE2_END,
+  PHASE0_TEMPLATE,
+} from "./phase0";
 import type {
   AppData,
   BodyMetric,
   ExerciseEntry,
   Phase,
   PresetExercise,
+  ScheduledExercise,
   Session,
   WeeklyCheckIn,
 } from "./types";
@@ -121,6 +136,65 @@ const rowToCheckin = (r: CheckinRow): WeeklyCheckIn => ({
   notes: r.notes,
 });
 
+interface ScheduledRow {
+  id: string;
+  phase_id: string;
+  day_of_week: number;
+  week_start: number | null;
+  week_end: number | null;
+  position: number;
+  name: string;
+  kind: ScheduledExercise["kind"];
+  sets: number | null;
+  reps: string | null;
+  weight: number | null;
+  duration_seconds: number | null;
+  work_seconds: number | null;
+  recovery_seconds: number | null;
+  rest_seconds: number | null;
+  unit: string | null;
+  note: string | null;
+}
+const scheduledToRow = (s: ScheduledExercise, userId: string) => ({
+  id: s.id,
+  user_id: userId,
+  phase_id: s.phaseId,
+  day_of_week: s.dayOfWeek,
+  week_start: s.weekStart,
+  week_end: s.weekEnd,
+  position: s.position,
+  name: s.name,
+  kind: s.kind,
+  sets: s.sets,
+  reps: s.reps,
+  weight: s.weight,
+  duration_seconds: s.durationSeconds,
+  work_seconds: s.workSeconds,
+  recovery_seconds: s.recoverySeconds,
+  rest_seconds: s.restSeconds,
+  unit: s.unit,
+  note: s.note,
+});
+const rowToScheduled = (r: ScheduledRow): ScheduledExercise => ({
+  id: r.id,
+  phaseId: r.phase_id,
+  dayOfWeek: r.day_of_week,
+  weekStart: r.week_start,
+  weekEnd: r.week_end,
+  position: r.position,
+  name: r.name,
+  kind: r.kind,
+  sets: r.sets,
+  reps: r.reps,
+  weight: r.weight,
+  durationSeconds: r.duration_seconds,
+  workSeconds: r.work_seconds,
+  recoverySeconds: r.recovery_seconds,
+  restSeconds: r.rest_seconds,
+  unit: r.unit,
+  note: r.note,
+});
+
 // ---------------------------------------------------------------------------
 // Reads
 // ---------------------------------------------------------------------------
@@ -128,18 +202,22 @@ const rowToCheckin = (r: CheckinRow): WeeklyCheckIn => ({
 // Load everything for the signed-in user. On a brand-new account (no profile
 // row yet), create one seeded with the exercise catalogue so the logger works.
 export async function fetchAllData(userId: string): Promise<AppData> {
-  const [profileRes, phasesRes, sessionsRes, metricsRes, checkinsRes] =
+  const [profileRes, phasesRes, sessionsRes, metricsRes, checkinsRes, scheduledRes] =
     await Promise.all([
       supabase.from("profiles").select("height_cm, exercises").eq("user_id", userId).maybeSingle(),
       supabase.from("phases").select("*"),
       supabase.from("sessions").select("*"),
       supabase.from("metrics").select("*"),
       supabase.from("checkins").select("*"),
+      supabase.from("scheduled_exercises").select("*"),
     ]);
 
+  // scheduled_exercises may not exist yet if the migration SQL hasn't been run —
+  // tolerate that rather than blocking the whole app.
   const firstError =
     profileRes.error || phasesRes.error || sessionsRes.error || metricsRes.error || checkinsRes.error;
   if (firstError) throw firstError;
+  const schedTableOk = !scheduledRes.error;
 
   let heightCm: number | null = null;
   let exercises: PresetExercise[] = [];
@@ -149,20 +227,88 @@ export async function fetchAllData(userId: string): Promise<AppData> {
     if (exercises.length === 0) exercises = seedExercises();
   } else {
     // First login for this account — seed the full starter dataset (phases,
-    // opening metric, exercise catalogue) so it mirrors a fresh install.
+    // Phase 0 schedule, opening metric, catalogue) so it mirrors a fresh install.
     const seed = buildSeedData();
     await importData(userId, seed);
     return seed;
   }
 
-  return {
+  const data: AppData = {
     phases: (phasesRes.data ?? []).map(rowToPhase),
     sessions: (sessionsRes.data ?? []).map(rowToSession),
     metrics: (metricsRes.data ?? []).map(rowToMetric),
     checkins: (checkinsRes.data ?? []).map(rowToCheckin),
     exercises,
+    scheduledExercises: schedTableOk ? (scheduledRes.data ?? []).map(rowToScheduled) : [],
     profile: { heightCm },
   };
+
+  // Bring an existing account up to the 3-phase program (adds Phase 0, shifts
+  // Phase 1/2 dates, seeds the Phase 0 schedule) — idempotent, only writes what's
+  // missing or out of date. Runs even if the schedule table is absent: phases go
+  // to the DB and the schedule falls back to the in-code template.
+  return ensureProgram(userId, data);
+}
+
+// Insert/refresh the Phase 0 → 1 → 2 program for an existing account without
+// disturbing logged data. Safe to run on every load.
+async function ensureProgram(userId: string, data: AppData): Promise<AppData> {
+  try {
+    const byName = (n: string) => data.phases.find((p) => p.name === n);
+    const phaseOps: Array<Promise<void>> = [];
+    let phases = [...data.phases];
+    let scheduled = [...data.scheduledExercises];
+
+    const shift = (name: string, startDate: string, endDate: string) => {
+      const p = byName(name);
+      if (p && (p.startDate !== startDate || p.endDate !== endDate)) {
+        const up = { ...p, startDate, endDate };
+        phaseOps.push(upsertPhase(userId, up));
+        phases = phases.map((x) => (x.id === p.id ? up : x));
+      }
+    };
+    shift(PHASE1_NAME, PHASE1_START, PHASE1_END);
+    shift(PHASE2_NAME, PHASE2_START, PHASE2_END);
+
+    let phase0 = byName(PHASE0_NAME);
+    if (!phase0) {
+      phase0 = {
+        id: uid("phase"),
+        name: PHASE0_NAME,
+        startDate: PHASE0_START,
+        endDate: PHASE0_END,
+        description: PHASE0_DESCRIPTION,
+        unlockedExercises: [],
+      };
+      phaseOps.push(upsertPhase(userId, phase0));
+      phases = [phase0, ...phases];
+    }
+
+    // Phases must be written before scheduled rows that reference phase_id.
+    if (phaseOps.length) await Promise.all(phaseOps);
+
+    // Phase 0 schedule: use DB rows if present, otherwise build from the code
+    // template. Persisting is best-effort (no-op if the table isn't migrated),
+    // but the rows are always available in memory so the UI works regardless.
+    const p0Id = phase0.id;
+    if (!scheduled.some((s) => s.phaseId === p0Id)) {
+      const rows: ScheduledExercise[] = PHASE0_TEMPLATE.map((t) => ({
+        ...t,
+        id: uid("sched"),
+        phaseId: p0Id,
+      }));
+      await runSafe(
+        supabase.from("scheduled_exercises").upsert(rows.map((r) => scheduledToRow(r, userId)))
+      );
+      scheduled = [...scheduled, ...rows];
+    }
+
+    return { ...data, phases, scheduledExercises: scheduled };
+  } catch (e) {
+    // Never block login on a migration hiccup — return what we loaded.
+    console.error("ensureProgram failed:", e);
+    return data;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -172,6 +318,17 @@ export async function fetchAllData(userId: string): Promise<AppData> {
 async function run(promise: PromiseLike<{ error: unknown }>) {
   const { error } = await promise;
   if (error) throw error;
+}
+
+// For scheduled_exercises ops: non-fatal if the table hasn't been migrated yet —
+// the schedule still works in-memory from the code template.
+async function runSafe(promise: PromiseLike<{ error: unknown }>) {
+  try {
+    const { error } = await promise;
+    if (error) throw error;
+  } catch (e) {
+    console.warn("scheduled_exercises op skipped (table not migrated?):", e);
+  }
 }
 
 export const upsertSession = (userId: string, s: Session) =>
@@ -217,11 +374,18 @@ export async function importData(userId: string, data: AppData): Promise<void> {
     await run(supabase.from("metrics").upsert(data.metrics.map((m) => metricToRow(m, userId))));
   if (data.checkins.length)
     await run(supabase.from("checkins").upsert(data.checkins.map((c) => checkinToRow(c, userId))));
+  if (data.scheduledExercises.length)
+    await runSafe(
+      supabase
+        .from("scheduled_exercises")
+        .upsert(data.scheduledExercises.map((s) => scheduledToRow(s, userId)))
+    );
 }
 
-// Delete all of the user's rows, then write a fresh seed. Returns the seed data.
+// Delete all of the user's rows, then write a fresh seed.
 export async function resetData(userId: string, seed: AppData): Promise<void> {
   await Promise.all([
+    runSafe(supabase.from("scheduled_exercises").delete().eq("user_id", userId)),
     run(supabase.from("sessions").delete().eq("user_id", userId)),
     run(supabase.from("metrics").delete().eq("user_id", userId)),
     run(supabase.from("checkins").delete().eq("user_id", userId)),

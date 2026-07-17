@@ -77,6 +77,17 @@ export const PRESET_EXERCISES: PresetExercise[] = [
     defaultDurationSeconds: 15 * 60, // 15 minutes
     note: "120-140 bpm. Bike, elliptical, or brisk walk. No running.",
   },
+
+  // ---- PHASE 0 CONDITIONING (jogs, intervals, breathing) ----
+  // Steady cardio & breathing log in minutes; interval/sprint work logs the
+  // work seconds per round (sets = number of rounds).
+  { name: "Warm-up jog", group: "cardio", inputType: "duration_min", defaultWeight: null, defaultDurationSeconds: 5 * 60, note: "Easy pace, just get moving." },
+  { name: "Zone 2 jog", group: "cardio", inputType: "duration_min", defaultWeight: null, defaultDurationSeconds: 20 * 60, note: "Conversational pace, 130-145 bpm." },
+  { name: "Zone 2 cooldown walk", group: "cardio", inputType: "duration_min", defaultWeight: null, defaultDurationSeconds: 10 * 60, note: "Easy walk only. Bring heart rate down gradually." },
+  { name: "Diaphragmatic breathing", group: "cardio", inputType: "duration_min", defaultWeight: null, defaultDurationSeconds: 5 * 60, note: "Lie flat. 5 counts in through nose, 5 counts out." },
+  { name: "Pickup intervals", group: "cardio", inputType: "duration", defaultWeight: null, defaultDurationSeconds: 30, sets: 4, unit: "s work", note: "Controlled hard effort — 80% max, not a sprint." },
+  { name: "Hard effort intervals", group: "cardio", inputType: "duration", defaultWeight: null, defaultDurationSeconds: 45, sets: 6, unit: "s work", note: "Hard but not maximal. Feel it in your lungs." },
+  { name: "Flat sprints", group: "cardio", inputType: "duration", defaultWeight: null, defaultDurationSeconds: 8, sets: 6, unit: "s work", note: "Max effort, 8s only. Full 3 min walk recovery between." },
 ];
 
 // Stable metadata lookup (group / inputType / unit never change per user).
