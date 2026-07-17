@@ -15,7 +15,7 @@ import {
   PHASE2_START,
   PHASE2_END,
   PHASE2_DESCRIPTION,
-  PHASE0_TEMPLATE,
+  phase0Schedule,
 } from "./phase0";
 
 // The three program phases in order (Phase 0 → 1 → 2), with fixed 2026 dates.
@@ -60,11 +60,7 @@ export function buildSeedData(): AppData {
   };
   const phases = buildSeedPhases();
   const phase0 = phases[0];
-  const scheduledExercises = PHASE0_TEMPLATE.map((t) => ({
-    ...t,
-    id: uid("sched"),
-    phaseId: phase0.id,
-  }));
+  const scheduledExercises = phase0Schedule(phase0.id);
   return {
     phases,
     sessions: [],

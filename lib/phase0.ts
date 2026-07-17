@@ -111,6 +111,13 @@ export const PHASE0_TEMPLATE: ScheduledTemplate[] = [
   ...SATURDAY.map((e, i) => mk({ ...e, dayOfWeek: 6, position: 10 + i })),
 ];
 
+// Materialize the template into concrete rows with STABLE, deterministic ids.
+// Re-seeding (or a dev StrictMode double-run) then upserts the same rows by id
+// instead of inserting duplicates.
+export function phase0Schedule(phaseId: string): ScheduledExercise[] {
+  return PHASE0_TEMPLATE.map((t, i) => ({ ...t, id: `sched_${phaseId}_${i}`, phaseId }));
+}
+
 // Which program week (1-4) a date falls in, relative to the phase start.
 export function phase0Week(dateISO: string, startISO = PHASE0_START): number {
   const wk = Math.floor(daysBetween(startISO, dateISO) / 7) + 1;
