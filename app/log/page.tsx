@@ -31,6 +31,7 @@ import { uid } from "@/lib/id";
 import type {
   ExerciseEntry,
   InputType,
+  MuscleGroup,
   PresetExercise,
   SessionType,
   SetEntry,
@@ -141,6 +142,7 @@ function LogInner() {
 
   const [search, setSearch] = useState("");
   const [customType, setCustomType] = useState<InputType>("weight_reps");
+  const [customGroup, setCustomGroup] = useState<MuscleGroup>("core");
   const [pendingLock, setPendingLock] = useState<string | null>(null);
 
   const phase = currentPhase(store.phases, date);
@@ -199,7 +201,7 @@ function LogInner() {
     if (!known) {
       store.addCustomExercise({
         name,
-        group: "core",
+        group: customGroup,
         inputType: customType,
         defaultWeight: null,
         defaultDurationSeconds:
@@ -209,6 +211,7 @@ function LogInner() {
     reallyAdd(name);
     setSearch("");
     setCustomType("weight_reps");
+    setCustomGroup("core");
   };
 
   // Load a whole day's plan (replaces the current exercise list + session type).
@@ -475,9 +478,22 @@ function LogInner() {
                         </p>
                         <div className="flex items-center gap-2">
                           <select
+                            value={customGroup}
+                            onChange={(e) => setCustomGroup(e.target.value as MuscleGroup)}
+                            className={`${inputClass} flex-1`}
+                            aria-label="Muscle group"
+                          >
+                            {GROUP_ORDER.map((g) => (
+                              <option key={g} value={g}>
+                                {GROUP_LABELS[g]}
+                              </option>
+                            ))}
+                          </select>
+                          <select
                             value={customType}
                             onChange={(e) => setCustomType(e.target.value as InputType)}
                             className={`${inputClass} flex-1`}
+                            aria-label="Measured in"
                           >
                             <option value="weight_reps">kg + reps</option>
                             <option value="bodyweight_reps">reps only</option>

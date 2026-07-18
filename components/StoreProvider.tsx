@@ -14,6 +14,7 @@ import type {
   BodyMetric,
   Phase,
   PresetExercise,
+  ScheduledExercise,
   Session,
   WeeklyCheckIn,
 } from "@/lib/types";
@@ -44,6 +45,9 @@ interface StoreValue extends AppData {
   deleteCheckin: (id: string) => void;
   upsertPhase: (p: Phase) => void;
   deletePhase: (id: string) => void;
+  // Edit a phase's DB-driven weekly plan (Phase 0).
+  addScheduledExercise: (s: ScheduledExercise) => void;
+  deleteScheduledExercise: (id: string) => void;
   reseed: () => void;
   // True when this browser still has old localStorage data available to import.
   hasLocalData: boolean;
@@ -156,6 +160,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       deletePhase: (id) => {
         apply({ ...dataRef.current, phases: dataRef.current.phases.filter((x) => x.id !== id) });
         db.deletePhase(id).catch(logFail);
+      },
+      addScheduledExercise: (s) => {
+        apply({
+          ...dataRef.current,
+          scheduledExercises: upsertById(dataRef.current.scheduledExercises, s),
+        });
+        db.upsertScheduled(userId, s).catch(logFail);
+      },
+      deleteScheduledExercise: (id) => {
+        apply({
+          ...dataRef.current,
+          scheduledExercises: dataRef.current.scheduledExercises.filter((x) => x.id !== id),
+        });
+        db.deleteScheduled(id).catch(logFail);
       },
       getEx: (name) => {
         const stored = data.exercises.find((e) => e.name === name);

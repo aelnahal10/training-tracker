@@ -290,32 +290,16 @@ async function ensureProgram(userId: string, data: AppData): Promise<AppData> {
     // Phase 0 schedule: use DB rows if present, otherwise build from the code
     // template. Persisting is best-effort (no-op if the table isn't migrated),
     // but the rows are always available in memory so the UI works regardless.
-    // Reconcile the Phase 0 schedule to exactly the deterministic template:
-    // upsert the canonical rows and drop any stale ones (e.g. duplicates from an
-    // earlier non-deterministic seed). Only writes when something differs.
+    // Seed the Phase 0 schedule once, only when it has no rows yet. Deterministic
+    // ids stop a concurrent first-seed from duplicating. After that the plan
+    // belongs to the user — we never overwrite or prune it, so edits persist.
     const p0Id = phase0.id;
-    const desired = phase0Schedule(p0Id);
-    const desiredIds = new Set(desired.map((r) => r.id));
-    const existingForPhase = scheduled.filter((s) => s.phaseId === p0Id);
-    const stale = existingForPhase.filter((s) => !desiredIds.has(s.id));
-    const missing = desired.filter((r) => !existingForPhase.some((s) => s.id === r.id));
-
-    if (missing.length || stale.length) {
-      if (missing.length)
-        await runSafe(
-          supabase.from("scheduled_exercises").upsert(desired.map((r) => scheduledToRow(r, userId)))
-        );
-      if (stale.length)
-        await runSafe(
-          supabase
-            .from("scheduled_exercises")
-            .delete()
-            .in(
-              "id",
-              stale.map((s) => s.id)
-            )
-        );
-      scheduled = [...scheduled.filter((s) => s.phaseId !== p0Id), ...desired];
+    if (!scheduled.some((s) => s.phaseId === p0Id)) {
+      const rows = phase0Schedule(p0Id);
+      await runSafe(
+        supabase.from("scheduled_exercises").upsert(rows.map((r) => scheduledToRow(r, userId)))
+      );
+      scheduled = [...scheduled, ...rows];
     }
 
     return { ...data, phases, scheduledExercises: scheduled };
@@ -365,6 +349,11 @@ export const upsertPhase = (userId: string, p: Phase) =>
   run(supabase.from("phases").upsert(phaseToRow(p, userId)));
 export const deletePhase = (id: string) =>
   run(supabase.from("phases").delete().eq("id", id));
+
+export const upsertScheduled = (userId: string, s: ScheduledExercise) =>
+  run(supabase.from("scheduled_exercises").upsert(scheduledToRow(s, userId)));
+export const deleteScheduled = (id: string) =>
+  run(supabase.from("scheduled_exercises").delete().eq("id", id));
 
 // height + exercise catalogue live in the single profiles row.
 export const saveProfile = (userId: string, heightCm: number | null, exercises: PresetExercise[]) =>
