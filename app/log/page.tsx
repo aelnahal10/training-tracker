@@ -30,6 +30,7 @@ import { parseISO, todayISO } from "@/lib/date";
 import { uid } from "@/lib/id";
 import type {
   ExerciseEntry,
+  InputType,
   PresetExercise,
   SessionType,
   SetEntry,
@@ -139,6 +140,7 @@ function LogInner() {
   const [editingId, setEditingId] = useState<string | null>(existing?.id ?? null);
 
   const [search, setSearch] = useState("");
+  const [customType, setCustomType] = useState<InputType>("weight_reps");
   const [pendingLock, setPendingLock] = useState<string | null>(null);
 
   const phase = currentPhase(store.phases, date);
@@ -163,6 +165,11 @@ function LogInner() {
     ),
   })).filter((g) => g.items.length > 0);
 
+  const trimmedSearch = search.trim();
+  const exactMatch = store.exercises.some(
+    (e) => e.name.toLowerCase() === trimmedSearch.toLowerCase()
+  );
+
   const addedNames = new Set(exercises.map((e) => e.name));
 
   const addExercise = (name: string) => {
@@ -182,6 +189,26 @@ function LogInner() {
       const count = defaultSetCount(ex);
       return [...prev, { name, sets: Array.from({ length: count }, () => blankSet()) }];
     });
+  };
+
+  // Create a brand-new exercise (not in the catalogue), remember it, and add it.
+  const addCustom = () => {
+    const name = search.trim();
+    if (!name) return;
+    const known = store.exercises.some((e) => e.name.toLowerCase() === name.toLowerCase());
+    if (!known) {
+      store.addCustomExercise({
+        name,
+        group: "core",
+        inputType: customType,
+        defaultWeight: null,
+        defaultDurationSeconds:
+          customType === "duration" ? 30 : customType === "duration_min" ? 600 : null,
+      });
+    }
+    reallyAdd(name);
+    setSearch("");
+    setCustomType("weight_reps");
   };
 
   // Load a whole day's plan (replaces the current exercise list + session type).
@@ -441,6 +468,28 @@ function LogInner() {
                         })}
                       </div>
                     ))}
+                    {trimmedSearch && !exactMatch && (
+                      <div className="border-t border-border px-3 py-2">
+                        <p className="mb-1.5 text-xs text-muted">
+                          Add &ldquo;{trimmedSearch}&rdquo; as a new exercise
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={customType}
+                            onChange={(e) => setCustomType(e.target.value as InputType)}
+                            className={`${inputClass} flex-1`}
+                          >
+                            <option value="weight_reps">kg + reps</option>
+                            <option value="bodyweight_reps">reps only</option>
+                            <option value="duration">seconds</option>
+                            <option value="duration_min">minutes</option>
+                          </select>
+                          <Button variant="secondary" onClick={addCustom}>
+                            + Add
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

@@ -52,6 +52,8 @@ interface StoreValue extends AppData {
   getEx: (name: string) => PresetExercise;
   // Remember edited defaults so they pre-fill next time.
   rememberDefaults: (patches: ExerciseDefaultPatch[]) => void;
+  // Add a user-defined exercise to the catalogue (persisted, reusable).
+  addCustomExercise: (ex: PresetExercise) => void;
   setHeight: (heightCm: number | null) => void;
 }
 
@@ -175,6 +177,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
                 : e.defaultDurationSeconds,
           };
         });
+        apply({ ...dataRef.current, exercises });
+        db.saveProfile(userId, dataRef.current.profile.heightCm, exercises).catch(logFail);
+      },
+      addCustomExercise: (ex) => {
+        const exists = dataRef.current.exercises.some(
+          (e) => e.name.toLowerCase() === ex.name.toLowerCase()
+        );
+        if (exists) return;
+        const exercises = [...dataRef.current.exercises, ex];
         apply({ ...dataRef.current, exercises });
         db.saveProfile(userId, dataRef.current.profile.heightCm, exercises).catch(logFail);
       },
