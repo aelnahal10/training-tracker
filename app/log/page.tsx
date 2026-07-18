@@ -476,7 +476,7 @@ function LogInner() {
                         <p className="mb-1.5 text-xs text-muted">
                           Add &ldquo;{trimmedSearch}&rdquo; as a new exercise
                         </p>
-                        <div className="flex items-center gap-2">
+                        <div className="flex gap-2">
                           <select
                             value={customGroup}
                             onChange={(e) => setCustomGroup(e.target.value as MuscleGroup)}
@@ -500,10 +500,14 @@ function LogInner() {
                             <option value="duration">seconds</option>
                             <option value="duration_min">minutes</option>
                           </select>
-                          <Button variant="secondary" onClick={addCustom}>
-                            + Add
-                          </Button>
                         </div>
+                        <Button
+                          variant="secondary"
+                          onClick={addCustom}
+                          className="mt-2 w-full py-3 text-base"
+                        >
+                          + Add exercise
+                        </Button>
                       </div>
                     )}
                   </div>
